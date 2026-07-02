@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 
 const ratingColor = (r) => {
-  if (r >= 4) return "#22D07A";
-  if (r >= 3) return "#F7C948";
+  if (r >= 8) return "#22D07A";
+  if (r >= 6) return "#F7C948";
   return "#F75B5B";
 };
 
-function ChargeMeter({ rating, max = 5 }) {
+function ChargeMeter({ rating, max = 10 }) {
   const [filled, setFilled] = useState(0);
   useEffect(() => {
     const t = setTimeout(() => setFilled(rating / max), 200);
@@ -32,17 +32,18 @@ function ChargeMeter({ rating, max = 5 }) {
         })}
       </div>
       <div style={{ fontSize: 28, fontWeight: 800, color, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -1 }}>
-        {rating.toFixed(1)} <span style={{ fontSize: 14, color: "#6B7280", fontWeight: 500 }}>/ 5.0</span>
+        {rating.toFixed(1)} <span style={{ fontSize: 14, color: "#6B7280", fontWeight: 500 }}>/ 10.0</span>
       </div>
     </div>
   );
 }
 
 function StarRow({ rating }) {
+  const stars = Math.round(rating / 2);
   return (
     <div style={{ display: "flex", gap: 2 }}>
       {[1, 2, 3, 4, 5].map((i) => (
-        <span key={i} style={{ fontSize: 14, color: i <= Math.round(rating) ? "#F7C948" : "#1E2235" }}>★</span>
+        <span key={i} style={{ fontSize: 14, color: i <= stars ? "#F7C948" : "#1E2235" }}>★</span>
       ))}
     </div>
   );
@@ -112,6 +113,117 @@ function LoadingPulse({ label }) {
 
 const API_BASE = "https://techverdict.onrender.com";
 
+function ChatBot({ product }) {
+  const [messages, setMessages] = useState([
+    { role: "assistant", text: `Ask me anything about the ${product}!` }
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef();
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function sendMessage() {
+    if (!input.trim() || loading) return;
+    const userMsg = input.trim();
+    setInput("");
+    setMessages(prev => [...prev, { role: "user", text: userMsg }]);
+    setLoading(true);
+
+    try {
+      const history = messages.map(m => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.text,
+      }));
+
+      const response = await fetch(`${API_BASE}/api/anthropic/v1/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-6",
+          max_tokens: 800,
+          system: `You are a helpful tech expert assistant who knows everything about the ${product}. Answer follow-up questions concisely and helpfully. Keep responses under 150 words unless the question requires more detail.`,
+          messages: [
+            ...history,
+            { role: "user", content: userMsg }
+          ],
+        }),
+      });
+
+      const data = await response.json();
+      const textBlock = data.content?.find(b => b.type === "text");
+      const reply = textBlock?.text || "Sorry, I couldn't get a response.";
+      setMessages(prev => [...prev, { role: "assistant", text: reply }]);
+    } catch {
+      setMessages(prev => [...prev, { role: "assistant", text: "Something went wrong. Try again." }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ background: "#13161F", border: "1px solid #1E2235", borderRadius: 16, overflow: "hidden" }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid #1E2235", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ fontSize: 16 }}>💬</span>
+        <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 14, color: "#E8EAF0" }}>Ask a follow-up</span>
+      </div>
+
+      <div style={{ height: 280, overflowY: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
+            <div style={{
+              maxWidth: "80%",
+              background: m.role === "user" ? "linear-gradient(135deg, #4F8EF7, #3B6FD4)" : "#0A0C12",
+              color: "#E8EAF0",
+              borderRadius: m.role === "user" ? "12px 12px 2px 12px" : "12px 12px 12px 2px",
+              padding: "10px 14px",
+              fontSize: 13,
+              lineHeight: 1.6,
+              border: m.role === "assistant" ? "1px solid #1E2235" : "none",
+            }}>
+              {m.text}
+            </div>
+          </div>
+        ))}
+        {loading && (
+          <div style={{ display: "flex", justifyContent: "flex-start" }}>
+            <div style={{ background: "#0A0C12", border: "1px solid #1E2235", borderRadius: "12px 12px 12px 2px", padding: "10px 14px" }}>
+              <span style={{ color: "#6B7280", fontSize: 13 }}>Thinking...</span>
+            </div>
+          </div>
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <div style={{ padding: "12px 16px", borderTop: "1px solid #1E2235", display: "flex", gap: 8 }}>
+        <input
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onKeyDown={e => e.key === "Enter" && sendMessage()}
+          placeholder="Ask anything about this product..."
+          style={{
+            flex: 1, background: "#0A0C12", border: "1px solid #1E2235",
+            borderRadius: 8, color: "#E8EAF0", fontSize: 13, padding: "10px 14px",
+          }}
+        />
+        <button
+          onClick={sendMessage}
+          disabled={loading || !input.trim()}
+          style={{
+            background: "linear-gradient(135deg, #4F8EF7, #3B6FD4)",
+            border: "none", color: "#fff", fontWeight: 700,
+            fontSize: 13, padding: "0 18px", borderRadius: 8,
+            cursor: loading || !input.trim() ? "not-allowed" : "pointer",
+            opacity: loading || !input.trim() ? 0.5 : 1,
+          }}
+        >Send</button>
+      </div>
+    </div>
+  );
+}
+
 export default function TechVerdict() {
   const [query, setQuery] = useState("");
   const [budget, setBudget] = useState("");
@@ -138,16 +250,17 @@ export default function TechVerdict() {
         "product": "Full product name",
         "category": "Smartphones / Laptops / Earbuds / GPU / etc",
         "price": "Approx retail price",
-        "rating": 4.5,
+        "rating": 8.5,
         "verdict": "A 2-3 sentence overall definitive verdict summary.",
         "pros": ["Pro 1", "Pro 2", "Pro 3"],
         "cons": ["Con 1", "Con 2", "Con 3"],
         "reviewSources": ["Source 1", "Source 2"],
         "tags": ["Best in class", "Value pick"],
         "alternatives": [
-          { "name": "Alternative Name", "price": "$$$", "rating": 4.2, "reason": "Short reason why it competes" }
+          { "name": "Alternative Name", "price": "$$$", "rating": 8.2, "reason": "Short reason why it competes" }
         ]
-      }`;
+      }
+      IMPORTANT: rating must be a number between 1.0 and 10.0 (out of 10, not out of 5). Alternatives ratings must also be out of 10.`;
 
       const response = await fetch(`${API_BASE}/api/anthropic/v1/messages`, {
         method: "POST",
@@ -196,6 +309,9 @@ export default function TechVerdict() {
         input:focus { outline: none; }
         button { cursor: pointer; }
         button:disabled { cursor: not-allowed; opacity: 0.5; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #0A0C12; }
+        ::-webkit-scrollbar-thumb { background: #1E2235; border-radius: 4px; }
       `}</style>
 
       <div style={{ maxWidth: 680, margin: "0 auto" }}>
@@ -325,6 +441,8 @@ export default function TechVerdict() {
                 </div>
               </div>
             )}
+
+            <ChatBot product={result.product} />
 
             <div style={{ textAlign: "center", paddingTop: 8 }}>
               <button
