@@ -183,7 +183,14 @@ function ChatBot({ product }) {
               lineHeight: 1.6,
               border: m.role === "assistant" ? "1px solid #1E2235" : "none",
             }}>
-              {m.text}
+              {m.text.split('\n').map((line, j) => (
+  <span key={j}>
+    {line.split(/\*\*(.*?)\*\*/g).map((part, k) =>
+      k % 2 === 1 ? <strong key={k}>{part}</strong> : part
+    )}
+    {j < m.text.split('\n').length - 1 && <br />}
+  </span>
+))}
             </div>
           </div>
         ))}
