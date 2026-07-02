@@ -1,0 +1,349 @@
+import { useState, useEffect, useRef } from "react";
+
+const ratingColor = (r) => {
+  if (r >= 4) return "#22D07A";
+  if (r >= 3) return "#F7C948";
+  return "#F75B5B";
+};
+
+function ChargeMeter({ rating, max = 5 }) {
+  const [filled, setFilled] = useState(0);
+  useEffect(() => {
+    const t = setTimeout(() => setFilled(rating / max), 200);
+    return () => clearTimeout(t);
+  }, [rating, max]);
+
+  const color = ratingColor(rating);
+  const segments = 10;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+      <div style={{ display: "flex", gap: 4 }}>
+        {Array.from({ length: segments }).map((_, i) => {
+          const active = filled >= (i + 1) / segments;
+          return (
+            <div key={i} style={{
+              width: 18, height: 32, borderRadius: 3,
+              background: active ? color : "#1E2235",
+              transition: `background 0.05s ease ${i * 0.04}s`,
+              boxShadow: active ? `0 0 8px ${color}80` : "none",
+            }} />
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 28, fontWeight: 800, color, fontFamily: "'Space Grotesk', sans-serif", letterSpacing: -1 }}>
+        {rating.toFixed(1)} <span style={{ fontSize: 14, color: "#6B7280", fontWeight: 500 }}>/ 5.0</span>
+      </div>
+    </div>
+  );
+}
+
+function StarRow({ rating }) {
+  return (
+    <div style={{ display: "flex", gap: 2 }}>
+      {[1, 2, 3, 4, 5].map((i) => (
+        <span key={i} style={{ fontSize: 14, color: i <= Math.round(rating) ? "#F7C948" : "#1E2235" }}>★</span>
+      ))}
+    </div>
+  );
+}
+
+function PillTag({ label, color }) {
+  return (
+    <span style={{
+      background: `${color}18`, color,
+      border: `1px solid ${color}40`,
+      borderRadius: 20, padding: "3px 10px",
+      fontSize: 11, fontWeight: 600, letterSpacing: 0.5,
+    }}>{label}</span>
+  );
+}
+
+function ProConList({ items, type }) {
+  const color = type === "pro" ? "#22D07A" : "#F75B5B";
+  const icon = type === "pro" ? "↑" : "↓";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      {items.map((item, i) => (
+        <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+          <span style={{ color, fontWeight: 700, fontSize: 13, marginTop: 1 }}>{icon}</span>
+          <span style={{ color: "#E8EAF0", fontSize: 13, lineHeight: 1.5 }}>{item}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function AlternativeCard({ alt }) {
+  return (
+    <div style={{
+      background: "#13161F", border: "1px solid #1E2235",
+      borderRadius: 12, padding: 16,
+      display: "flex", flexDirection: "column", gap: 8,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ fontWeight: 700, color: "#E8EAF0", fontSize: 14, lineHeight: 1.3 }}>{alt.name}</div>
+        <div style={{ color: "#4F8EF7", fontWeight: 700, fontSize: 13, whiteSpace: "nowrap", marginLeft: 8 }}>{alt.price}</div>
+      </div>
+      <StarRow rating={alt.rating} />
+      <div style={{ fontSize: 12, color: "#6B7280", lineHeight: 1.5 }}>{alt.reason}</div>
+    </div>
+  );
+}
+
+function LoadingPulse({ label }) {
+  const [dots, setDots] = useState(".");
+  useEffect(() => {
+    const t = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 400);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "48px 0" }}>
+      <div style={{
+        width: 48, height: 48, borderRadius: "50%",
+        border: "3px solid #1E2235", borderTop: "3px solid #4F8EF7",
+        animation: "spin 0.8s linear infinite",
+      }} />
+      <div style={{ color: "#6B7280", fontSize: 14 }}>{label}{dots}</div>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+export default function TechVerdict() {
+  const [query, setQuery] = useState("");
+  const [budget, setBudget] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState("");
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const inputRef = useRef();
+
+  const examples = ["Samsung Galaxy S25 Ultra", "Sony WH-1000XM5", "MacBook Air M3", "RTX 4070 Ti", "iPad Pro 13"];
+
+  async function handleSearch() {
+    if (!query.trim()) return;
+    setLoading(true);
+    setResult(null);
+    setError(null);
+    setLoadingStep("Scouring the web for reviews");
+
+    try {
+      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
+      if (!apiKey || apiKey.includes("your-key-here")) {
+        throw new Error("Missing API Key. Please add it to your .env file.");
+      }
+
+      setLoadingStep("Analyzing and rating");
+
+      const budgetText = budget ? ` with a budget of ${budget}` : "";
+      const prompt = `You are TechVerdict AI. Provide a comprehensive, structured review analysis summary for: "${query}"${budgetText}. 
+      Search the web for up-to-date real-world usage details and community consensus. You must respond with ONLY a raw, valid JSON object following this exact format (no markdown wrappers, no backticks, no trailing text):
+      {
+        "product": "Full product name",
+        "category": "Smartphones / Laptops / Earbuds / GPU / etc",
+        "price": "Approx retail price",
+        "rating": 4.5,
+        "verdict": "A 2-3 sentence overall definitive verdict summary.",
+        "pros": ["Pro 1", "Pro 2", "Pro 3"],
+        "cons": ["Con 1", "Con 2", "Con 3"],
+        "reviewSources": ["Source 1", "Source 2"],
+        "tags": ["Best in class", "Value pick"],
+        "alternatives": [
+          { "name": "Alternative Name", "price": "$$$", "rating": 4.2, "reason": "Short reason why it competes" }
+        ]
+      }`;
+      
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          model: "claude-sonnet-4-6",
+          max_tokens: 1500,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData?.error?.message || `API Error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const textBlock = data.content?.find(b => b.type === "text");
+      if (!textBlock) throw new Error("No text content returned from AI.");
+
+      const cleanJson = JSON.parse(textBlock.text.trim());
+      setResult(cleanJson);
+
+    } catch (e) {
+      setError(`Something went wrong: ${e.message}. Try again.`);
+    } finally {
+      setLoading(false);
+      setLoadingStep("");
+    }
+  }
+
+  return (
+    <div style={{
+      minHeight: "100vh", background: "#0A0C12",
+      fontFamily: "'Inter', system-ui, sans-serif",
+      color: "#E8EAF0", padding: "0 16px 48px",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700;800&family=Inter:wght@400;500;600&display=swap');
+        * { box-sizing: border-box; }
+        input::placeholder { color: #4B5563; }
+        input:focus { outline: none; }
+        button { cursor: pointer; }
+        button:disabled { cursor: not-allowed; opacity: 0.5; }
+      `}</style>
+
+      <div style={{ maxWidth: 680, margin: "0 auto" }}>
+        {/* Header */}
+        <div style={{ paddingTop: 48, paddingBottom: 32, textAlign: "center" }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
+            <div style={{
+              width: 32, height: 32, borderRadius: 8,
+              background: "linear-gradient(135deg, #4F8EF7, #7C3AED)",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16,
+            }}>⚡</div>
+            <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: 20, letterSpacing: -0.5 }}>TechVerdict</span>
+          </div>
+          <h1 style={{
+            fontFamily: "'Space Grotesk', sans-serif",
+            fontWeight: 800, fontSize: 32, letterSpacing: -1.5,
+            margin: "0 0 8px", lineHeight: 1.15,
+          }}>
+            One verdict.<br />
+            <span style={{ color: "#4F8EF7" }}>No more tab hopping.</span>
+          </h1>
+          <p style={{ color: "#6B7280", fontSize: 15, margin: 0 }}>
+            AI-powered reviews aggregated from across the web — rated, summarized, compared.
+          </p>
+        </div>
+
+        {/* Search */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ display: "flex", background: "#13161F", border: "1px solid #1E2235", borderRadius: 14, overflow: "hidden" }}>
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleSearch()}
+              placeholder="Search any phone, laptop, GPU, earbuds..."
+              style={{ flex: 1, background: "transparent", border: "none", color: "#E8EAF0", fontSize: 15, padding: "14px 16px" }}
+            />
+            <button
+              onClick={handleSearch}
+              disabled={loading || !query.trim()}
+              style={{
+                background: "linear-gradient(135deg, #4F8EF7, #3B6FD4)",
+                border: "none", color: "#fff", fontWeight: 700,
+                fontSize: 14, padding: "0 24px",
+                fontFamily: "'Space Grotesk', sans-serif",
+              }}
+            >{loading ? "..." : "Analyze"}</button>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ color: "#6B7280", fontSize: 12, whiteSpace: "nowrap" }}>Budget:</span>
+            <input
+              value={budget}
+              onChange={e => setBudget(e.target.value)}
+              placeholder="e.g. $500 (optional)"
+              style={{ flex: 1, background: "#13161F", border: "1px solid #1E2235", borderRadius: 8, color: "#E8EAF0", fontSize: 13, padding: "8px 12px" }}
+            />
+          </div>
+
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {examples.map(ex => (
+              <button key={ex} onClick={() => { setQuery(ex); setTimeout(() => inputRef.current?.focus(), 0); }}
+                style={{ background: "#1E2235", border: "1px solid #2A2D3E", borderRadius: 20, color: "#6B7280", fontSize: 12, padding: "4px 12px" }}>
+                {ex}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {loading && <LoadingPulse label={loadingStep} />}
+
+        {error && (
+          <div style={{ marginTop: 24, padding: 16, background: "rgba(247,91,91,0.1)", border: "1px solid rgba(247,91,91,0.3)", borderRadius: 12, color: "#F75B5B", fontSize: 14 }}>
+            {error}
+          </div>
+        )}
+
+        {result && !loading && (
+          <div style={{ marginTop: 28, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ background: "#13161F", border: "1px solid #1E2235", borderRadius: 16, padding: 24 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 12, marginBottom: 20 }}>
+                <div>
+                  <div style={{ color: "#6B7280", fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{result.category}</div>
+                  <h2 style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 800, fontSize: 22, margin: 0, letterSpacing: -0.5 }}>{result.product}</h2>
+                  <div style={{ color: "#4F8EF7", fontWeight: 600, fontSize: 14, marginTop: 4 }}>{result.price}</div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {result.tags?.slice(0, 3).map(tag => <PillTag key={tag} label={tag} color="#4F8EF7" />)}
+                </div>
+              </div>
+
+              <div style={{ background: "#0A0C12", borderRadius: 12, padding: "20px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: 12, marginBottom: 20 }}>
+                <div style={{ color: "#6B7280", fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase" }}>TechVerdict Score</div>
+                <ChargeMeter rating={result.rating} />
+              </div>
+
+              <p style={{ fontSize: 15, lineHeight: 1.7, color: "#E8EAF0", margin: "0 0 20px", fontStyle: "italic", borderLeft: "3px solid #4F8EF7", paddingLeft: 14 }}>
+                {result.verdict}
+              </p>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 16 }}>
+                <div>
+                  <div style={{ color: "#22D07A", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>What's good</div>
+                  <ProConList items={result.pros} type="pro" />
+                </div>
+                <div>
+                  <div style={{ color: "#F75B5B", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 }}>Watch out for</div>
+                  <ProConList items={result.cons} type="con" />
+                </div>
+              </div>
+
+              {result.reviewSources?.length > 0 && (
+                <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid #1E2235" }}>
+                  <div style={{ color: "#6B7280", fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Sources reviewed</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {result.reviewSources.map(s => <PillTag key={s} label={s} color="#6B7280" />)}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {result.alternatives?.length > 0 && (
+              <div>
+                <div style={{ color: "#6B7280", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 12 }}>
+                  {budget ? `Alternatives near ${budget}` : "Similar alternatives"}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12 }}>
+                  {result.alternatives.map((alt, i) => <AlternativeCard key={i} alt={alt} />)}
+                </div>
+              </div>
+            )}
+
+            <div style={{ textAlign: "center", paddingTop: 8 }}>
+              <button
+                onClick={() => { setResult(null); setQuery(""); inputRef.current?.focus(); }}
+                style={{ background: "none", border: "1px solid #1E2235", borderRadius: 8, color: "#6B7280", fontSize: 13, padding: "8px 20px" }}
+              >Search another product</button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
