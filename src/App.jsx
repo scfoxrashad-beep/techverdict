@@ -95,7 +95,7 @@ function LoadingPulse({ label }) {
   const [dots, setDots] = useState(".");
   useEffect(() => {
     const t = setInterval(() => setDots(d => d.length >= 3 ? "." : d + "."), 400);
-    return () => clearTimeout(t);
+    return () => clearInterval(t);
   }, []);
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 16, padding: "48px 0" }}>
@@ -109,6 +109,8 @@ function LoadingPulse({ label }) {
     </div>
   );
 }
+
+const API_BASE = "https://techverdict.onrender.com";
 
 export default function TechVerdict() {
   const [query, setQuery] = useState("");
@@ -129,13 +131,6 @@ export default function TechVerdict() {
     setLoadingStep("Scouring the web for reviews");
 
     try {
-      const apiKey = import.meta.env.VITE_ANTHROPIC_API_KEY;
-      if (!apiKey || apiKey.includes("your-key-here")) {
-        throw new Error("Missing API Key. Please add it to your .env file.");
-      }
-
-      setLoadingStep("Analyzing and rating");
-
       const budgetText = budget ? ` with a budget of ${budget}` : "";
       const prompt = `You are TechVerdict AI. Provide a comprehensive, structured review analysis summary for: "${query}"${budgetText}. 
       Search the web for up-to-date real-world usage details and community consensus. You must respond with ONLY a raw, valid JSON object following this exact format (no markdown wrappers, no backticks, no trailing text):
@@ -153,22 +148,19 @@ export default function TechVerdict() {
           { "name": "Alternative Name", "price": "$$$", "rating": 4.2, "reason": "Short reason why it competes" }
         ]
       }`;
-      
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+
+      const response = await fetch(`${API_BASE}/api/anthropic/v1/messages`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tools: [{ type: "web_search_20250305", name: "web_search" }],
           model: "claude-sonnet-4-6",
           max_tokens: 1500,
-          messages: [{ role: "user", content: prompt }]
-        })
+          tools: [{ type: "web_search_20250305", name: "web_search" }],
+          messages: [{ role: "user", content: prompt }],
+        }),
       });
+
+      setLoadingStep("Analyzing and rating");
 
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
@@ -176,10 +168,11 @@ export default function TechVerdict() {
       }
 
       const data = await response.json();
-      const textBlock = data.content?.find(b => b.type === "text");
+      const textBlocks = data.content?.filter((b) => b.type === "text");
+      const textBlock = textBlocks?.[textBlocks.length - 1];
       if (!textBlock) throw new Error("No text content returned from AI.");
 
-      const cleanJson = JSON.parse(textBlock.text.trim());
+      const cleanJson = JSON.parse(textBlock.text.trim().replace(/```json|```/g, "").trim());
       setResult(cleanJson);
 
     } catch (e) {
@@ -206,7 +199,6 @@ export default function TechVerdict() {
       `}</style>
 
       <div style={{ maxWidth: 680, margin: "0 auto" }}>
-        {/* Header */}
         <div style={{ paddingTop: 48, paddingBottom: 32, textAlign: "center" }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, marginBottom: 16 }}>
             <div style={{
@@ -229,7 +221,6 @@ export default function TechVerdict() {
           </p>
         </div>
 
-        {/* Search */}
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           <div style={{ display: "flex", background: "#13161F", border: "1px solid #1E2235", borderRadius: 14, overflow: "hidden" }}>
             <input
